@@ -96,8 +96,25 @@ fi
 
 PROMPT+="
 ## Rules
-- If the task is clear and validation is straightforward, complete it fully
-- If the result is ambiguous or risky, stop and note that this needs Antoine's review
+
+### Push decision
+After committing, you MUST decide whether to push. Apply these criteria:
+
+**Auto-push (safe):**
+- Config-only changes (typos, docs, YAML tweaks)
+- Fixes with clear, verifiable validation (tests pass, linter clean)
+- Changes isolated to a single well-understood component
+
+**Do NOT push (needs review):**
+- Changes to core logic, data pipelines, or business rules
+- Changes touching multiple files or components
+- Changes you cannot fully validate locally (e.g., needs deployment, cloud infra)
+- Any uncertainty about side effects
+
+If you push: report status as 'success' with the commit and push details.
+If you don't push: report status as 'needs_review', explain WHY you held back, and what Antoine should check.
+
+### General
 - Always report: what you did, outcome (success/failed/needs_review), any artifacts (commits, PRs)
 "
 
