@@ -1,7 +1,6 @@
 ---
 id: worldpulse
 repo: https://github.com/ant1h/world-pulse
-local_path: /home/antoine-header/Projects/lucidforecast/world-pulse
 ---
 
 # WorldPulse

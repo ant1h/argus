@@ -13,6 +13,7 @@
 ```
 argus/
 ├── PLAN.md
+├── repos/                          # git-ignored agent working copies (auto-cloned)
 ├── projects/
 │   └── <project-id>/
 │       ├── project.md          # repo url, tasks, resources, schedule

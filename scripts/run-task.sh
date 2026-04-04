@@ -46,17 +46,17 @@ TASK_SUBPROJECT="$(echo "$TASK_BLOCK" | grep '\*\*subproject:\*\*' | sed 's/.*\*
 # Parse resources
 TASK_RESOURCES="$(echo "$TASK_BLOCK" | awk '/\*\*resources:\*\*$/,/\*\*[^r]|^###|^##/' | grep -E '(url|note|local|gcs):' || echo "")"
 
-# Get local path: explicit local_path from frontmatter, or derive from repo URL
-REPO_LOCAL="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep '^local_path:' | sed 's/local_path: *//')"
-if [[ -z "$REPO_LOCAL" ]]; then
-    REPO_NAME="$(basename "$REPO_URL" .git)"
-    REPO_LOCAL="$HOME/Projects/perso/$REPO_NAME"
-fi
+# Agent working copy lives inside argus/repos/<project-id>
+REPO_LOCAL="$ARGUS_DIR/repos/$PROJECT_ID"
 
-# Clone if not present locally
+# Clone if not present, pull if already cloned
 if [[ ! -d "$REPO_LOCAL" ]]; then
     echo "Cloning $REPO_URL to $REPO_LOCAL..."
+    mkdir -p "$ARGUS_DIR/repos"
     git clone "$REPO_URL" "$REPO_LOCAL"
+else
+    echo "Pulling latest changes..."
+    git -C "$REPO_LOCAL" pull --ff-only 2>&1 || echo "WARNING: pull failed, running on current state"
 fi
 
 # Build the prompt for Claude Code
