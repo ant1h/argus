@@ -11,8 +11,8 @@ cat > "$STATUS_FILE" << 'HEADER'
 
 > Auto-generated. Do not edit manually.
 
-| Project | Task | Last Run | Status | Next Run |
-|---------|------|----------|--------|----------|
+| Project | Task | Last Run | Status | Pushed | Next Run |
+|---------|------|----------|--------|--------|----------|
 HEADER
 
 # Iterate over all projects
@@ -45,13 +45,14 @@ for project_dir in "$ARGUS_DIR"/projects/*/; do
             if [[ -n "$latest_log" ]]; then
                 last_run="$(basename "$latest_log" .md | tr '_' ' ')"
                 status="$(sed -n '/^---$/,/^---$/p' "$latest_log" | grep '^status:' | sed 's/status: *//')"
+                pushed="$(sed -n '/^---$/,/^---$/p' "$latest_log" | grep '^pushed:' | sed 's/pushed: *//' || echo "-")"
             fi
         fi
 
         # Calculate next run from cron expression (approximate)
         next_run="$schedule"
 
-        echo "| $project_id | $task_id | $last_run | $status | $next_run |" >> "$STATUS_FILE"
+        echo "| $project_id | $task_id | $last_run | $status | $pushed | $next_run |" >> "$STATUS_FILE"
 
     done < <(grep '^### ' "$project_file" | sed 's/^### //')
 done

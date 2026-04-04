@@ -3,6 +3,13 @@ set -euo pipefail
 
 # Argus task runner
 # Usage: run-task.sh <project-id> <task-id>
+#
+# Flow:
+#   1. Clone/pull repo
+#   2. Run task (Claude does the work, may commit)
+#   3. If commits were made, run review skill (separate Claude invocation)
+#   4. Push or hold based on review decision
+#   5. Write log, update STATUS.md
 
 ARGUS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_ID="${1:?Usage: run-task.sh <project-id> <task-id>}"
@@ -59,8 +66,12 @@ else
     git -C "$REPO_LOCAL" pull --ff-only 2>&1 || echo "WARNING: pull failed, running on current state"
 fi
 
-# Build the prompt for Claude Code
-PROMPT="You are Argus, an autonomous agent working on project '$PROJECT_ID', task '$TASK_ID'.
+# Record HEAD before task runs
+HEAD_BEFORE="$(git -C "$REPO_LOCAL" rev-parse HEAD)"
+
+# ── Step 1: Build task prompt ──
+
+TASK_PROMPT="You are Argus, an autonomous agent working on project '$PROJECT_ID', task '$TASK_ID'.
 
 ## Task
 - **Type:** $TASK_TYPE
@@ -70,90 +81,131 @@ PROMPT="You are Argus, an autonomous agent working on project '$PROJECT_ID', tas
 $TASK_RESOURCES
 "
 
-# Add type-specific instructions
 if [[ "$TASK_TYPE" == "roadmap" ]]; then
     ROADMAP_FILE="ROADMAP.md"
     if [[ -n "$TASK_SUBPROJECT" ]]; then
         ROADMAP_FILE="roadmaps/$TASK_SUBPROJECT.md"
     fi
-    PROMPT+="
+    TASK_PROMPT+="
 ## Roadmap instructions
 1. Read $ROADMAP_FILE in this repo
 2. Find the highest priority item with status 'todo' that has no unmet dependencies and is assigned to 'agent' or 'both'
 3. Implement it
 4. Update the item's status to 'done' (if fully complete and tests pass) or 'review' (if it needs Antoine's review)
 5. Commit your changes with a clear message
-6. Report what you did
+6. Do NOT push — a separate review step will handle that
+7. Report what you did
 "
 elif [[ "$TASK_TYPE" == "routine" ]]; then
-    PROMPT+="
+    TASK_PROMPT+="
 ## Routine instructions
 Execute the objective described above. Be concise in your output.
-Commit any changes if applicable.
+Commit any changes if applicable. Do NOT push — a separate review step will handle that.
 Report what you did and the outcome.
 "
 fi
 
-PROMPT+="
+TASK_PROMPT+="
 ## Rules
-
-### Push decision
-After committing, you MUST decide whether to push. Apply these criteria:
-
-**Auto-push (safe):**
-- Config-only changes (typos, docs, YAML tweaks)
-- Fixes with clear, verifiable validation (tests pass, linter clean)
-- Changes isolated to a single well-understood component
-
-**Do NOT push (needs review):**
-- Changes to core logic, data pipelines, or business rules
-- Changes touching multiple files or components
-- Changes you cannot fully validate locally (e.g., needs deployment, cloud infra)
-- Any uncertainty about side effects
-
-If you push: report status as 'success' with the commit and push details.
-If you don't push: report status as 'needs_review', explain WHY you held back, and what Antoine should check.
-
-### General
-- Always report: what you did, outcome (success/failed/needs_review), any artifacts (commits, PRs)
+- Always report: what you did, outcome (success/failed/needs_review), any artifacts (commits)
+- Do NOT push to remote. Commits only.
 "
 
 # Create log directory
 mkdir -p "$LOG_DIR"
 
-# Run Claude Code
+# ── Step 2: Run task ──
+
 echo "[$TIMESTAMP] Running task '$TASK_ID' for project '$PROJECT_ID'..."
 echo "Working directory: $REPO_LOCAL"
 
-CLAUDE_OUTPUT=""
+TASK_OUTPUT=""
 RUN_STATUS="success"
 
-CLAUDE_OUTPUT=$(cd "$REPO_LOCAL" && claude --print --dangerously-skip-permissions -p "$PROMPT" 2>&1) || RUN_STATUS="failed"
+TASK_OUTPUT=$(cd "$REPO_LOCAL" && claude --print --dangerously-skip-permissions -p "$TASK_PROMPT" 2>&1) || RUN_STATUS="failed"
 
-# Write log
+# ── Step 3: Review & push decision ──
+
+HEAD_AFTER="$(git -C "$REPO_LOCAL" rev-parse HEAD)"
+REVIEW_OUTPUT=""
+PUSH_DECISION="none"
+
+if [[ "$HEAD_BEFORE" != "$HEAD_AFTER" && "$RUN_STATUS" != "failed" ]]; then
+    echo "[$TIMESTAMP] Changes detected. Running review..."
+
+    # Gather diff and commit info
+    DIFF="$(git -C "$REPO_LOCAL" diff "$HEAD_BEFORE".."$HEAD_AFTER")"
+    COMMITS="$(git -C "$REPO_LOCAL" log --oneline "$HEAD_BEFORE".."$HEAD_AFTER")"
+    DIFF_STAT="$(git -C "$REPO_LOCAL" diff --stat "$HEAD_BEFORE".."$HEAD_AFTER")"
+
+    # Load review skill
+    REVIEW_SKILL="$(cat "$ARGUS_DIR/skills/review-push.md")"
+
+    REVIEW_PROMPT="$REVIEW_SKILL
+
+## Context
+- **Project:** $PROJECT_ID
+- **Task:** $TASK_ID ($TASK_TYPE)
+- **Objective:** $TASK_OBJECTIVE
+
+## Commits
+$COMMITS
+
+## Diff stats
+$DIFF_STAT
+
+## Full diff
+\`\`\`diff
+$DIFF
+\`\`\`"
+
+    REVIEW_OUTPUT=$(cd "$REPO_LOCAL" && claude --print --dangerously-skip-permissions -p "$REVIEW_PROMPT" 2>&1) || true
+
+    # Parse decision
+    if echo "$REVIEW_OUTPUT" | grep -q "DECISION=push"; then
+        PUSH_DECISION="push"
+        echo "[$TIMESTAMP] Review decision: PUSH"
+        git -C "$REPO_LOCAL" push 2>&1 || { PUSH_DECISION="push_failed"; echo "WARNING: push failed"; }
+    else
+        PUSH_DECISION="hold"
+        echo "[$TIMESTAMP] Review decision: HOLD for Antoine's review"
+        RUN_STATUS="needs_review"
+    fi
+else
+    echo "[$TIMESTAMP] No new commits."
+fi
+
+# ── Step 4: Write log ──
+
 cat > "$LOG_FILE" << EOF
 ---
 task: $TASK_ID
 project: $PROJECT_ID
 timestamp: $(date -Iseconds)
 status: $RUN_STATUS
+pushed: $PUSH_DECISION
+commits: $HEAD_BEFORE..$HEAD_AFTER
 ---
 
-## Prompt
+## Objective
 $TASK_OBJECTIVE
 
-## Output
-$CLAUDE_OUTPUT
+## Task output
+$TASK_OUTPUT
+
+## Review
+$REVIEW_OUTPUT
 EOF
 
-# Check if output indicates needs_review
-if echo "$CLAUDE_OUTPUT" | grep -qi "needs.*review\|needs antoine\|requires review"; then
+# Check if task output indicates needs_review (even without commits)
+if [[ "$PUSH_DECISION" == "none" ]] && echo "$TASK_OUTPUT" | grep -qi "needs.*review\|needs antoine\|requires review"; then
     sed -i "s/^status: .*/status: needs_review/" "$LOG_FILE"
     RUN_STATUS="needs_review"
 fi
 
-echo "[$TIMESTAMP] Task '$TASK_ID' completed with status: $RUN_STATUS"
+echo "[$TIMESTAMP] Task '$TASK_ID' completed with status: $RUN_STATUS (push: $PUSH_DECISION)"
 echo "Log written to: $LOG_FILE"
 
-# Update STATUS.md
+# ── Step 5: Update dashboard ──
+
 "$ARGUS_DIR/scripts/update-status.sh"
