@@ -57,13 +57,29 @@ TASK_RESOURCES="$(echo "$TASK_BLOCK" | awk '/\*\*resources:\*\*$/,/\*\*[^r]|^###
 REPO_LOCAL="$ARGUS_DIR/repos/$PROJECT_ID"
 
 # Clone if not present, pull if already cloned
+NEEDS_SETUP=false
 if [[ ! -d "$REPO_LOCAL" ]]; then
     echo "Cloning $REPO_URL to $REPO_LOCAL..."
     mkdir -p "$ARGUS_DIR/repos"
     git clone "$REPO_URL" "$REPO_LOCAL"
+    NEEDS_SETUP=true
 else
     echo "Pulling latest changes..."
     git -C "$REPO_LOCAL" pull --ff-only 2>&1 || echo "WARNING: pull failed, running on current state"
+fi
+
+# Run setup script if defined in project frontmatter (e.g., provisioning configs)
+SETUP_SCRIPT="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep '^setup:' | sed 's/setup: *//')"
+if [[ -n "$SETUP_SCRIPT" ]]; then
+    SETUP_PATH="$ARGUS_DIR/$SETUP_SCRIPT"
+    if [[ -x "$SETUP_PATH" ]]; then
+        if [[ "$NEEDS_SETUP" == true ]]; then
+            echo "Running setup: $SETUP_SCRIPT..."
+            "$SETUP_PATH" 2>&1 || echo "WARNING: setup script failed"
+        fi
+    else
+        echo "WARNING: setup script not found or not executable: $SETUP_PATH"
+    fi
 fi
 
 # Record HEAD before task runs
