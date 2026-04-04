@@ -82,12 +82,45 @@ if [[ -n "$SETUP_SCRIPT" ]]; then
     fi
 fi
 
+# ── Clone/pull tool repos ──
+
+# Parse tools block: lines like "  - name: https://github.com/..."
+TOOLS_INFO=""
+while IFS= read -r tool_line; do
+    [[ -z "$tool_line" ]] && continue
+    tool_name="$(echo "$tool_line" | sed 's/.*- //' | cut -d: -f1)"
+    tool_url="$(echo "$tool_line" | sed "s/.*$tool_name: *//")"
+    [[ -z "$tool_name" || -z "$tool_url" ]] && continue
+
+    tool_dir="$ARGUS_DIR/repos/tools/$tool_name"
+
+    if [[ ! -d "$tool_dir" ]]; then
+        echo "Cloning tool '$tool_name'..."
+        mkdir -p "$ARGUS_DIR/repos/tools"
+        git clone "$tool_url" "$tool_dir"
+
+        # Run tool setup script if it exists
+        tool_setup="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep "^setup_${tool_name}:" | sed "s/setup_${tool_name}: *//")"
+        if [[ -n "$tool_setup" && -x "$ARGUS_DIR/$tool_setup" ]]; then
+            echo "Running tool setup: $tool_setup..."
+            "$ARGUS_DIR/$tool_setup" 2>&1 || echo "WARNING: tool setup failed"
+        fi
+    else
+        echo "Pulling tool '$tool_name'..."
+        git -C "$tool_dir" pull --ff-only 2>&1 || echo "WARNING: pull failed for tool $tool_name"
+    fi
+
+    TOOLS_INFO+="- **$tool_name**: $tool_dir
+"
+done < <(echo "$TASK_BLOCK" | awk '/\*\*tools:\*\*$/,/\*\*[^t]|^###|^##/' | grep -E '^\s+- ' | grep -v '\*\*tools' || true)
+
 # Record HEAD before task runs
 HEAD_BEFORE="$(git -C "$REPO_LOCAL" rev-parse HEAD)"
 
 # ── Step 1: Build task prompt ──
 
 TASK_PROMPT="You are Argus, an autonomous agent working on project '$PROJECT_ID', task '$TASK_ID'.
+Your working directory is the project repo. Commit changes here only.
 
 ## Task
 - **Type:** $TASK_TYPE
@@ -96,6 +129,15 @@ TASK_PROMPT="You are Argus, an autonomous agent working on project '$PROJECT_ID'
 ## Resources
 $TASK_RESOURCES
 "
+
+# Add tools section if any tools were cloned
+if [[ -n "$TOOLS_INFO" ]]; then
+    TASK_PROMPT+="
+## Tools (available repos — read/execute only, do NOT commit here)
+$TOOLS_INFO
+You can run commands in these tool directories but all git commits must be in the main project repo.
+"
+fi
 
 if [[ "$TASK_TYPE" == "roadmap" ]]; then
     ROADMAP_FILE="ROADMAP.md"

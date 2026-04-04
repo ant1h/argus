@@ -1,6 +1,7 @@
 ---
 id: worldpulse
 repo: https://github.com/ant1h/world-pulse
+setup_seo-optimizer: scripts/setup-seo-configs.sh
 ---
 
 # WorldPulse
@@ -12,6 +13,7 @@ Public BI service for financial and economic data at worldpulse.ai. 70+ data sou
 - Ensure data freshness across all sources
 - Detect and fix ingestion failures before they impact users
 - Maintain data quality and pipeline reliability
+- SEO: grow organic traffic through keyword-driven content
 
 ## Tasks
 
@@ -28,3 +30,12 @@ Public BI service for financial and economic data at worldpulse.ai. 70+ data sou
   - local: core/quality/checks.py
   - local: config/sources.yaml
   - local: apps/api/routers/admin/fetch_logs.py
+
+### seo-refresh
+- **type:** routine
+- **schedule:** 0 6 * * 1
+- **objective:** Run keyword refresh and content ideas for worldpulse using the seo-optimizer tool. 1) cd to the seo-optimizer tool dir and run `poetry run seo research --discover worldpulse` then `poetry run seo content ideas worldpulse`. 2) Review the generated briefs in the tool's projects/worldpulse/data/briefs/. 3) If there are actionable briefs, implement the top recommendation in the website repo (create/update pages, meta tags, content). Commit changes in the main repo only.
+- **tools:**
+  - seo-optimizer: https://github.com/ant1h/seo-optimizer
+- **resources:**
+  - local: apps/web/
