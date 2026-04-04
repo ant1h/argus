@@ -1,0 +1,11 @@
+[Unit]
+Description=Argus scheduled timer: %i
+
+[Timer]
+# Override OnCalendar per instance via drop-in or install script
+# Default: disabled (no OnCalendar set)
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

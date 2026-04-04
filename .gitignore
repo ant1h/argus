@@ -1,0 +1,13 @@
+# Secrets
+config/*.json
+*.key
+*.pem
+.env
+
+# Logs (tracked separately or too voluminous)
+projects/*/logs/
+
+# OS / editor
+.DS_Store
+*.swp
+*~

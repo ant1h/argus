@@ -1,0 +1,17 @@
+# Roadmap
+
+## Item title
+- **status:** todo
+- **priority:** p0
+- **depends_on:**
+- **assigned:** agent
+
+Description of what needs to happen.
+
+## Another item
+- **status:** todo
+- **priority:** p1
+- **depends_on:** Item title
+- **assigned:** both
+
+Description.

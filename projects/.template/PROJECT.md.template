@@ -1,0 +1,24 @@
+---
+id: project-name
+subprojects: []
+---
+
+# Project Name
+
+Brief description.
+
+## Objectives
+
+- Objective 1
+
+## KPIs (optional)
+
+- KPI 1
+
+## Subprojects
+
+<!-- For simple projects, omit this section and use ROADMAP.md at root -->
+<!-- For complex projects, list subprojects here and create roadmaps/<name>.md -->
+
+- **subproject-a** — description
+- **subproject-b** — description

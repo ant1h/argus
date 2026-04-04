@@ -1,0 +1,23 @@
+[Unit]
+Description=Argus task runner: %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=antoine-header
+Environment=HOME=/home/antoine-header
+Environment=PATH=/home/antoine-header/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/home/antoine-header/Projects/perso/argus
+
+# %i format: project-id--task-id (double dash separator)
+ExecStart=/bin/bash -c 'instance="%i"; project="${instance%%--*}"; task="${instance#*--}"; /home/antoine-header/Projects/perso/argus/scripts/run-task.sh "$project" "$task"'
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=argus-%i
+
+# Safety
+TimeoutStartSec=600
+Nice=10
