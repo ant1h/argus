@@ -46,9 +46,12 @@ TASK_SUBPROJECT="$(echo "$TASK_BLOCK" | grep '\*\*subproject:\*\*' | sed 's/.*\*
 # Parse resources
 TASK_RESOURCES="$(echo "$TASK_BLOCK" | awk '/\*\*resources:\*\*$/,/\*\*[^r]|^###|^##/' | grep -E '(url|note|local|gcs):' || echo "")"
 
-# Derive local repo path from URL (assumes ~/Projects/perso/<repo-name>)
-REPO_NAME="$(basename "$REPO_URL" .git)"
-REPO_LOCAL="$HOME/Projects/perso/$REPO_NAME"
+# Get local path: explicit local_path from frontmatter, or derive from repo URL
+REPO_LOCAL="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep '^local_path:' | sed 's/local_path: *//')"
+if [[ -z "$REPO_LOCAL" ]]; then
+    REPO_NAME="$(basename "$REPO_URL" .git)"
+    REPO_LOCAL="$HOME/Projects/perso/$REPO_NAME"
+fi
 
 # Clone if not present locally
 if [[ ! -d "$REPO_LOCAL" ]]; then

@@ -1,6 +1,7 @@
 ---
 id: template
 repo: https://github.com/ant1h/REPO_NAME
+local_path: /home/antoine-header/Projects/path/to/repo  # optional, derived from repo URL if omitted
 ---
 
 # Project Name
