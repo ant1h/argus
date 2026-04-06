@@ -48,7 +48,7 @@ fi
 # Parse task fields
 TASK_TYPE="$(echo "$TASK_BLOCK" | grep '\*\*type:\*\*' | sed 's/.*\*\* //')"
 TASK_OBJECTIVE="$(echo "$TASK_BLOCK" | grep '\*\*objective:\*\*' | sed 's/.*\*\* //')"
-TASK_SUBPROJECT="$(echo "$TASK_BLOCK" | grep '\*\*subproject:\*\*' | sed 's/.*\*\* //' || echo "")"
+TASK_SUBPROJECT="$(echo "$TASK_BLOCK" | grep '\*\*subproject:\*\*' | sed 's/.*\*\* //' || true)"
 
 # Parse resources
 TASK_RESOURCES="$(echo "$TASK_BLOCK" | awk '/\*\*resources:\*\*$/,/\*\*[^r]|^###|^##/' | grep -E '(url|note|local|gcs):' || echo "")"
@@ -69,7 +69,7 @@ else
 fi
 
 # Run setup script if defined in project frontmatter (e.g., provisioning configs)
-SETUP_SCRIPT="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep '^setup:' | sed 's/setup: *//')"
+SETUP_SCRIPT="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep '^setup:' | sed 's/setup: *//' || true)"
 if [[ -n "$SETUP_SCRIPT" ]]; then
     SETUP_PATH="$ARGUS_DIR/$SETUP_SCRIPT"
     if [[ -x "$SETUP_PATH" ]]; then
@@ -86,33 +86,37 @@ fi
 
 # Parse tools block: lines like "  - name: https://github.com/..."
 TOOLS_INFO=""
-while IFS= read -r tool_line; do
-    [[ -z "$tool_line" ]] && continue
-    tool_name="$(echo "$tool_line" | sed 's/.*- //' | cut -d: -f1)"
-    tool_url="$(echo "$tool_line" | sed "s/.*$tool_name: *//")"
-    [[ -z "$tool_name" || -z "$tool_url" ]] && continue
+TOOL_LINES="$(echo "$TASK_BLOCK" | awk '/\*\*tools:\*\*$/,/\*\*[^t]|^###|^##/' | grep -E '^\s+- ' | grep -v '\*\*tools' || true)"
 
-    tool_dir="$ARGUS_DIR/repos/tools/$tool_name"
+if [[ -n "$TOOL_LINES" ]]; then
+    while IFS= read -r tool_line; do
+        [[ -z "$tool_line" ]] && continue
+        tool_name="$(echo "$tool_line" | sed 's/.*- //' | cut -d: -f1)"
+        tool_url="$(echo "$tool_line" | sed "s/.*$tool_name: *//")"
+        [[ -z "$tool_name" || -z "$tool_url" ]] && continue
 
-    if [[ ! -d "$tool_dir" ]]; then
-        echo "Cloning tool '$tool_name'..."
-        mkdir -p "$ARGUS_DIR/repos/tools"
-        git clone "$tool_url" "$tool_dir"
+        tool_dir="$ARGUS_DIR/repos/tools/$tool_name"
 
-        # Run tool setup script if it exists
-        tool_setup="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep "^setup_${tool_name}:" | sed "s/setup_${tool_name}: *//")"
-        if [[ -n "$tool_setup" && -x "$ARGUS_DIR/$tool_setup" ]]; then
-            echo "Running tool setup: $tool_setup..."
-            "$ARGUS_DIR/$tool_setup" 2>&1 || echo "WARNING: tool setup failed"
+        if [[ ! -d "$tool_dir" ]]; then
+            echo "Cloning tool '$tool_name'..."
+            mkdir -p "$ARGUS_DIR/repos/tools"
+            git clone "$tool_url" "$tool_dir"
+
+            # Run tool setup script if it exists
+            tool_setup="$(sed -n '/^---$/,/^---$/p' "$PROJECT_FILE" | grep "^setup_${tool_name}:" | sed "s/setup_${tool_name}: *//" || true)"
+            if [[ -n "$tool_setup" && -x "$ARGUS_DIR/$tool_setup" ]]; then
+                echo "Running tool setup: $tool_setup..."
+                "$ARGUS_DIR/$tool_setup" 2>&1 || echo "WARNING: tool setup failed"
+            fi
+        else
+            echo "Pulling tool '$tool_name'..."
+            git -C "$tool_dir" pull --ff-only 2>&1 || echo "WARNING: pull failed for tool $tool_name"
         fi
-    else
-        echo "Pulling tool '$tool_name'..."
-        git -C "$tool_dir" pull --ff-only 2>&1 || echo "WARNING: pull failed for tool $tool_name"
-    fi
 
-    TOOLS_INFO+="- **$tool_name**: $tool_dir
+        TOOLS_INFO+="- **$tool_name**: $tool_dir
 "
-done < <(echo "$TASK_BLOCK" | awk '/\*\*tools:\*\*$/,/\*\*[^t]|^###|^##/' | grep -E '^\s+- ' | grep -v '\*\*tools' || true)
+    done <<< "$TOOL_LINES"
+fi
 
 # Record HEAD before task runs
 HEAD_BEFORE="$(git -C "$REPO_LOCAL" rev-parse HEAD)"

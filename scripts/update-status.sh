@@ -39,6 +39,7 @@ for project_dir in "$ARGUS_DIR"/projects/*/; do
         log_dir="$project_dir/logs/$task_id"
         last_run="never"
         status="-"
+        pushed="-"
 
         if [[ -d "$log_dir" ]]; then
             latest_log="$(ls -1 "$log_dir"/*.md 2>/dev/null | sort | tail -1 || echo "")"
