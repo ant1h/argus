@@ -56,7 +56,7 @@ for project_dir in "$ARGUS_DIR"/projects/*/; do
 
         # Build OnCalendar string
         dow_map=("Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat")
-        cal_dow="*"
+        cal_dow=""
         if [[ "$cron_dow" != "*" ]]; then
             # Convert 1-5 to Mon..Fri etc
             cal_dow=""
@@ -85,7 +85,11 @@ for project_dir in "$ARGUS_DIR"/projects/*/; do
         cal_min="$cron_min"
         [[ "$cron_min" == "*" ]] && cal_min="*"
 
-        on_calendar="$cal_dow *-${cal_month}-${cal_day} ${cal_hour}:${cal_min}:00"
+        if [[ -n "$cal_dow" ]]; then
+            on_calendar="$cal_dow *-${cal_month}-${cal_day} ${cal_hour}:${cal_min}:00"
+        else
+            on_calendar="*-${cal_month}-${cal_day} ${cal_hour}:${cal_min}:00"
+        fi
 
         # Create drop-in override for this timer instance
         override_dir="$TIMER_DIR/argus-task@${instance}.timer.d"
